@@ -197,7 +197,59 @@ else
     PANEL_URL="http://${SERVER_IP}:${PANEL_PORT}"
 fi
 
-# 7. Настройка Systemd сервиса
+# 7. Настройка Nginx и SSL (при наличии домена)
+if [[ -n "$DOMAIN" ]]; then
+    info "Настройка HTTPS и выпуск SSL-сертификата Let's Encrypt для ${DOMAIN}..."
+    if command -v apt-get &>/dev/null; then
+        apt-get install -y -qq nginx certbot
+    elif command -v dnf &>/dev/null; then
+        dnf install -y -q nginx certbot
+    elif command -v yum &>/dev/null; then
+        yum install -y -q nginx certbot
+    fi
+
+    # Выпуск сертификата через standalone
+    certbot certonly --standalone -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email || true
+
+    if [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
+        cat <<EOF > /etc/nginx/sites-available/cosmo.conf
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${DOMAIN};
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:${PANEL_PORT};
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+EOF
+        rm -f /etc/nginx/sites-enabled/default
+        ln -sf /etc/nginx/sites-available/cosmo.conf /etc/nginx/sites-enabled/
+        nginx -t 2>/dev/null && systemctl restart nginx || true
+        systemctl enable nginx 2>/dev/null || true
+        success "HTTPS настроен: https://${DOMAIN}"
+    fi
+fi
+
+# 8. Настройка Systemd сервиса
 cat <<EOF > "$SYSTEMD_SERVICE"
 [Unit]
 Description=Cosmo VPN Admin Panel (Rust Core)
