@@ -12,6 +12,20 @@ pub struct AppData {
     pub host_settings: HostSettings,
     pub traffic_points: Vec<TrafficPoint>,
     pub admin_claimed: bool,
+    #[serde(default = "default_token")]
+    pub admin_secret_token: String,
+}
+
+fn default_token() -> String {
+    let mut bytes = [0u8; 16];
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    for (i, b) in bytes.iter_mut().enumerate() {
+        *b = ((now >> (i * 8)) & 0xff) as u8 ^ ((i as u8) * 31 + 7);
+    }
+    hex::encode(bytes)
 }
 
 impl Default for AppData {
@@ -48,6 +62,7 @@ impl Default for AppData {
                 TrafficPoint { label: "20:00".into(), total_gb: 9.1, down_gb: 7.5, up_gb: 1.6 },
             ],
             admin_claimed: false,
+            admin_secret_token: default_token(),
         }
     }
 }
@@ -64,7 +79,7 @@ impl Db {
             let _ = fs::create_dir_all(parent);
         }
 
-        let data = if p.exists() {
+        let mut data = if p.exists() {
             match fs::read_to_string(&p) {
                 Ok(content) => match serde_json::from_str::<AppData>(&content) {
                     Ok(parsed) => parsed,
@@ -84,10 +99,25 @@ impl Db {
             def
         };
 
+        if data.admin_secret_token.is_empty() {
+            data.admin_secret_token = default_token();
+            let _ = fs::write(&p, serde_json::to_string_pretty(&data).unwrap_or_default());
+        }
+
         Self {
             file_path: p,
             state: Arc::new(RwLock::new(data)),
         }
+    }
+
+    pub fn save_data(&self, snapshot: &AppData) -> Result<(), std::io::Error> {
+        let json = serde_json::to_string_pretty(snapshot)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+
+        let tmp_path = self.file_path.with_extension("tmp");
+        fs::write(&tmp_path, json)?;
+        fs::rename(&tmp_path, &self.file_path)?;
+        Ok(())
     }
 
     pub async fn save(&self) -> Result<(), std::io::Error> {
@@ -95,14 +125,6 @@ impl Db {
             let guard = self.state.read().await;
             guard.clone()
         };
-
-        let json = serde_json::to_string_pretty(&snapshot)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-        // Atomic write via tempfile
-        let tmp_path = self.file_path.with_extension("tmp");
-        fs::write(&tmp_path, json)?;
-        fs::rename(&tmp_path, &self.file_path)?;
-        Ok(())
+        self.save_data(&snapshot)
     }
 }

@@ -106,7 +106,7 @@ impl TelegramBot {
         let user_id = msg["from"]["id"].as_i64().unwrap_or(chat_id);
         let text = msg["text"].as_str().unwrap_or("").trim();
 
-        // Check or claim admin
+        // Check or claim admin (never deadlocks)
         let is_admin = self.check_or_claim_admin(user_id).await;
         if !is_admin {
             self.send_message(
@@ -129,7 +129,7 @@ impl TelegramBot {
         } else {
             self.send_message(
                 chat_id,
-                "🌌 *Cosmo VPN Panel*\n\nВыберите действие из меню или откройте WebApp панель ниже.",
+                "🌌 *Cosmo VPN Panel*\n\nПанель защищена от посторонних. Управление доступно только в Telegram Mini App или по секретной ссылке.",
                 Some(self.build_main_keyboard()),
             )
             .await;
@@ -137,40 +137,64 @@ impl TelegramBot {
     }
 
     async fn check_or_claim_admin(&self, user_id: i64) -> bool {
-        let mut guard = self.db.state.write().await;
-        let admin_str = guard.host_settings.admin_telegram_ids.trim();
+        let should_save = {
+            let mut guard = self.db.state.write().await;
+            let admin_str = guard.host_settings.admin_telegram_ids.trim();
 
-        if admin_str.is_empty() || admin_str == "0" {
-            // First user to message becomes admin!
-            guard.host_settings.admin_telegram_ids = user_id.to_string();
-            guard.admin_claimed = true;
+            if admin_str.is_empty() || admin_str == "0" {
+                // First user to message becomes admin!
+                guard.host_settings.admin_telegram_ids = user_id.to_string();
+                guard.admin_claimed = true;
+                true
+            } else {
+                false
+            }
+        };
+
+        if should_save {
             let _ = self.db.save().await;
             info!("[Telegram] Admin claimed by Telegram User ID: {}", user_id);
             return true;
         }
 
-        // Check if user is in comma-separated list
-        admin_str
+        let guard = self.db.state.read().await;
+        guard.host_settings.admin_telegram_ids
             .split(',')
             .any(|part| part.trim() == user_id.to_string())
     }
 
     async fn handle_start(&self, chat_id: i64, user_id: i64) {
-        let guard = self.db.state.read().await;
-        let domain = if guard.host_settings.domain.is_empty() {
-            "IP / локальный адрес"
-        } else {
-            &guard.host_settings.domain
+        let (domain, active_count, secret_token) = {
+            let guard = self.db.state.read().await;
+            let dom = if guard.host_settings.domain.is_empty() {
+                "IP / локальный адрес"
+            } else {
+                &guard.host_settings.domain
+            };
+            (
+                dom.to_string(),
+                guard.keys.iter().filter(|k| k.enabled).count(),
+                guard.admin_secret_token.clone(),
+            )
         };
-        let active_count = guard.keys.iter().filter(|k| k.enabled).count();
+
+        let secret_url = if self.panel_url.contains('?') {
+            format!("{}&auth={}", self.panel_url, secret_token)
+        } else {
+            format!("{}?auth={}", self.panel_url, secret_token)
+        };
 
         let text = format!(
-            "🌌 *Добро пожаловать в Cosmo VPN Panel!*\n\n\
-            👤 Ваш ID: `{}` (Администратор)\n\
+            "🌌 *Cosmo VPN Panel*\n\n\
+            👤 Ваш Telegram ID: `{}` (Администратор)\n\
             🌐 Хост: `{}`\n\
-            🔑 Активных ключей в /sub: *{}*\n\n\
-            Нажмите кнопку ниже, чтобы открыть панель прямо в Telegram Mini App:",
-            user_id, domain, active_count
+            🔑 Включено в /sub: *{}*\n\n\
+            🔒 *Безопасность:* Для всех остальных из интернета панель полностью скрыта (403 Forbidden).\n\n\
+            📱 Откройте панель в Telegram Mini App кнопкой ниже\n\
+            💻 Либо используйте секретную ссылку администратора:\n[🔗 Войти в панель]({})\n\n\
+            `/sub` — получить ссылку на подписку для клиента\n\
+            `/status` — статистика хоста и нагрузка",
+            user_id, domain, active_count, secret_url
         );
 
         self.send_message(chat_id, &text, Some(self.build_main_keyboard()))
@@ -194,8 +218,8 @@ impl TelegramBot {
 
         let text = format!(
             "🔗 *Ваша ссылка единой подписки /sub:*\n\n`{}`\n\n\
-            Скопируйте эту ссылку в **Happ, v2rayNG, Streisand, v2rayTun, Sing-box, NekoBox** или любой совместимый клиент.\n\n\
-            Все включённые протоколы (VLESS Reality, Hysteria2, SOCKS5, MTProxy) обновляются автоматически!",
+            Скопируйте эту ссылку в **Happ, v2rayNG, Streisand, v2rayTun, Sing-box, NekoBox**.\n\
+            При изменении ключей в панели подписка обновляется автоматически.",
             sub_url
         );
 

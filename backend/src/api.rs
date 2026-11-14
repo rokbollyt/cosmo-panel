@@ -1,4 +1,5 @@
 use crate::acme::AcmeManager;
+use crate::auth::verify_telegram_init_data;
 use crate::db::Db;
 use crate::models::{
     HostSettings, OverviewData, SubscriptionHeaders, SystemStats, VpnKey,
@@ -6,7 +7,7 @@ use crate::models::{
 use crate::proxy::ProxyManager;
 use crate::sub::generate_subscription_body;
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
@@ -21,25 +22,86 @@ pub struct AppContext {
     pub proxy_mgr: Arc<ProxyManager>,
     pub acme_mgr: Arc<AcmeManager>,
     pub sysinfo: Mutex<System>,
+    pub bot_token: String,
+}
+
+async fn check_auth(headers: &HeaderMap, uri: &Uri, ctx: &AppContext) -> Result<(), StatusCode> {
+    let (admin_token, admin_ids) = {
+        let guard = ctx.db.state.read().await;
+        (
+            guard.admin_secret_token.clone(),
+            guard.host_settings.admin_telegram_ids.clone(),
+        )
+    };
+
+    // 1. Check direct token in header X-Cosmo-Auth or Authorization: Bearer
+    if let Some(val) = headers.get("X-Cosmo-Auth").and_then(|v| v.to_str().ok()) {
+        if val == admin_token && !admin_token.is_empty() {
+            return Ok(());
+        }
+    }
+    if let Some(val) = headers.get(header::AUTHORIZATION).and_then(|v| v.to_str().ok()) {
+        if let Some(bearer) = val.strip_prefix("Bearer ") {
+            if bearer == admin_token && !admin_token.is_empty() {
+                return Ok(());
+            }
+        }
+    }
+
+    // 2. Check query string ?auth=token
+    if let Some(query) = uri.query() {
+        for part in query.split('&') {
+            if let Some((k, v)) = part.split_once('=') {
+                if k == "auth" && v == admin_token && !admin_token.is_empty() {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    // 3. Check Telegram WebApp initData header
+    if let Some(init_data) = headers.get("X-Telegram-Init-Data").and_then(|v| v.to_str().ok()) {
+        if verify_telegram_init_data(init_data, &ctx.bot_token, &admin_ids) {
+            return Ok(());
+        }
+    }
+
+    Err(StatusCode::FORBIDDEN)
 }
 
 pub fn create_api_router(ctx: Arc<AppContext>) -> Router {
+    let protected_api = Router::new()
+        .route("/overview", get(handle_get_overview))
+        .route("/keys", get(handle_list_keys))
+        .route("/keys", post(handle_create_key))
+        .route("/keys/{id}", patch(handle_patch_key))
+        .route("/keys/{id}", delete(handle_delete_key))
+        .route("/subscription", get(handle_get_subscription))
+        .route("/subscription/headers", put(handle_put_subscription_headers))
+        .route("/settings", get(handle_get_settings))
+        .route("/settings", put(handle_put_settings))
+        .route("/settings/acme/renew", post(handle_renew_acme))
+        .route("/core/restart", post(handle_restart_cores))
+        .layer(axum::middleware::from_fn_with_state(
+            ctx.clone(),
+            auth_middleware,
+        ));
+
     Router::new()
-        // Single Subscription Endpoint
+        // Single Subscription Endpoint (Public for VPN clients)
         .route("/sub", get(handle_get_sub))
-        // REST API
-        .route("/api/v1/overview", get(handle_get_overview))
-        .route("/api/v1/keys", get(handle_list_keys))
-        .route("/api/v1/keys", post(handle_create_key))
-        .route("/api/v1/keys/{id}", patch(handle_patch_key))
-        .route("/api/v1/keys/{id}", delete(handle_delete_key))
-        .route("/api/v1/subscription", get(handle_get_subscription))
-        .route("/api/v1/subscription/headers", put(handle_put_subscription_headers))
-        .route("/api/v1/settings", get(handle_get_settings))
-        .route("/api/v1/settings", put(handle_put_settings))
-        .route("/api/v1/settings/acme/renew", post(handle_renew_acme))
-        .route("/api/v1/core/restart", post(handle_restart_cores))
+        // Protected Admin REST API
+        .nest("/api/v1", protected_api)
         .with_state(ctx)
+}
+
+async fn auth_middleware(
+    State(ctx): State<Arc<AppContext>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Result<Response, StatusCode> {
+    check_auth(req.headers(), req.uri(), &ctx).await?;
+    Ok(next.run(req).await)
 }
 
 // ============================================================================

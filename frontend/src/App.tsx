@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { ShieldAlert } from 'lucide-react';
 import { SnowLiquidShader } from './components/shaders/SnowLiquidShader';
 import { LiquidGlassFilterDefs } from './components/shaders/LiquidGlassSurface';
 import { LiquidTabBar } from './components/layout/LiquidTabBar';
@@ -20,7 +21,7 @@ import type {
   TabId,
   VpnKey,
 } from './types/vpn';
-import { api, type SystemStats } from './api/client';
+import { api, isTelegramOrAuthorized, type SystemStats } from './api/client';
 import { initTelegramMiniApp } from './utils/haptics';
 import { JELLY_SNAP, JELLY_TAB_VARIANTS } from './utils/motion';
 
@@ -30,6 +31,7 @@ import { JELLY_SNAP, JELLY_TAB_VARIANTS } from './utils/motion';
 // ============================================================================
 
 export function App() {
+  const [authorized] = useState<boolean>(() => isTelegramOrAuthorized());
   const [activeTab, setActiveTab] = useState<TabId>('overview');
 
   // Состояние данных с синхронизацией через Rust REST API
@@ -57,8 +59,10 @@ export function App() {
     }, 2400);
   }, []);
 
-  // Первоначальная загрузка данных с сервера
+  // Первоначальная загрузка данных с сервера (только если авторизован)
   useEffect(() => {
+    if (!authorized) return;
+
     initTelegramMiniApp();
 
     const loadData = async () => {
@@ -93,7 +97,7 @@ export function App() {
     }, 5000);
 
     return () => clearInterval(timer);
-  }, []);
+  }, [authorized]);
 
   const handleToggleKey = useCallback(
     async (id: string, enabled: boolean) => {
@@ -173,6 +177,26 @@ export function App() {
     },
     [showToast]
   );
+
+  if (!authorized) {
+    return (
+      <div className="relative flex min-h-[100dvh] w-full flex-col items-center justify-center bg-black px-6 text-center text-white">
+        <LiquidGlassFilterDefs />
+        <SnowLiquidShader />
+        <div className="relative z-10 mx-auto max-w-[340px] p-6">
+          <div className="liquid-glass mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-[20px]">
+            <ShieldAlert className="h-7 w-7 text-white/50" />
+          </div>
+          <h1 className="text-[17px] font-semibold tracking-wide text-white">
+            403 · Доступ ограничен
+          </h1>
+          <p className="mt-2 text-[12.5px] leading-relaxed text-white/45">
+            Узел защищен. Панель управления доступна только через авторизованный Telegram-бот в режиме Mini App.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-[100dvh] w-full bg-black text-white">

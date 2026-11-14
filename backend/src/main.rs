@@ -1,5 +1,6 @@
 mod acme;
 mod api;
+mod auth;
 mod db;
 mod models;
 mod proxy;
@@ -78,10 +79,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // If initial admin ID specified via env, store it
     if !initial_admin_id.is_empty() {
-        let mut guard = db.state.write().await;
-        if guard.host_settings.admin_telegram_ids.is_empty() {
-            guard.host_settings.admin_telegram_ids = initial_admin_id;
-            guard.admin_claimed = true;
+        let should_save = {
+            let mut guard = db.state.write().await;
+            if guard.host_settings.admin_telegram_ids.is_empty() {
+                guard.host_settings.admin_telegram_ids = initial_admin_id;
+                guard.admin_claimed = true;
+                true
+            } else {
+                false
+            }
+        };
+        if should_save {
             let _ = db.save().await;
         }
     }
@@ -107,7 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     if !telegram_token.is_empty() {
-        let tg_bot = Arc::new(TelegramBot::new(telegram_token, db.clone(), panel_url));
+        let tg_bot = Arc::new(TelegramBot::new(telegram_token.clone(), db.clone(), panel_url));
         tokio::spawn(async move {
             tg_bot.run_loop().await;
         });
@@ -118,6 +126,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         proxy_mgr,
         acme_mgr,
         sysinfo: Mutex::new(System::new_all()),
+        bot_token: telegram_token,
     });
 
     // CORS for Mini App iframe and cross-origin access

@@ -23,15 +23,77 @@ export interface OverviewResponse {
 
 const API_BASE = ''; // relative to host
 
+export function getAuthToken(): string {
+  if (typeof window === 'undefined') return '';
+
+  // Check URL query param ?auth=...
+  const urlParams = new URLSearchParams(window.location.search);
+  const qToken = urlParams.get('auth');
+  if (qToken) {
+    try {
+      localStorage.setItem('cosmo_auth', qToken);
+    } catch {
+      // ignore
+    }
+    return qToken;
+  }
+
+  // Check localStorage
+  try {
+    const saved = localStorage.getItem('cosmo_auth');
+    if (saved) return saved;
+  } catch {
+    // ignore
+  }
+
+  return '';
+}
+
+export function isTelegramOrAuthorized(): boolean {
+  if (typeof window === 'undefined') return false;
+
+  // In Telegram Mini App, initData is present
+  const tgInitData = (window as any).Telegram?.WebApp?.initData;
+  if (tgInitData && typeof tgInitData === 'string' && tgInitData.length > 5) {
+    return true;
+  }
+
+  // Or secret auth token exists
+  return !!getAuthToken();
+}
+
+function getHeaders(custom: Record<string, string> = {}): Record<string, string> {
+  const headers: Record<string, string> = { ...custom };
+
+  if (typeof window !== 'undefined') {
+    const tgInitData = (window as any).Telegram?.WebApp?.initData;
+    if (tgInitData && typeof tgInitData === 'string' && tgInitData.length > 0) {
+      headers['X-Telegram-Init-Data'] = tgInitData;
+    }
+
+    const token = getAuthToken();
+    if (token) {
+      headers['X-Cosmo-Auth'] = token;
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+
+  return headers;
+}
+
 export const api = {
   async getOverview(): Promise<OverviewResponse> {
-    const res = await fetch(`${API_BASE}/api/v1/overview`);
+    const res = await fetch(`${API_BASE}/api/v1/overview`, {
+      headers: getHeaders(),
+    });
     if (!res.ok) throw new Error(`Overview fetch failed: ${res.statusText}`);
     return res.json();
   },
 
   async getKeys(): Promise<VpnKey[]> {
-    const res = await fetch(`${API_BASE}/api/v1/keys`);
+    const res = await fetch(`${API_BASE}/api/v1/keys`, {
+      headers: getHeaders(),
+    });
     if (!res.ok) throw new Error(`Keys fetch failed: ${res.statusText}`);
     return res.json();
   },
@@ -39,7 +101,7 @@ export const api = {
   async createKey(key: VpnKey): Promise<VpnKey> {
     const res = await fetch(`${API_BASE}/api/v1/keys`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(key),
     });
     if (!res.ok) throw new Error(`Create key failed: ${res.statusText}`);
@@ -49,7 +111,7 @@ export const api = {
   async toggleKey(id: string, enabled: boolean): Promise<void> {
     const res = await fetch(`${API_BASE}/api/v1/keys/${encodeURIComponent(id)}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ enabled }),
     });
     if (!res.ok) throw new Error(`Toggle key failed: ${res.statusText}`);
@@ -58,12 +120,15 @@ export const api = {
   async deleteKey(id: string): Promise<void> {
     const res = await fetch(`${API_BASE}/api/v1/keys/${encodeURIComponent(id)}`, {
       method: 'DELETE',
+      headers: getHeaders(),
     });
     if (!res.ok) throw new Error(`Delete key failed: ${res.statusText}`);
   },
 
   async getSubscriptionHeaders(): Promise<SubscriptionHeaders> {
-    const res = await fetch(`${API_BASE}/api/v1/subscription`);
+    const res = await fetch(`${API_BASE}/api/v1/subscription`, {
+      headers: getHeaders(),
+    });
     if (!res.ok) throw new Error(`Subscription fetch failed: ${res.statusText}`);
     return res.json();
   },
@@ -71,14 +136,16 @@ export const api = {
   async saveSubscriptionHeaders(headers: SubscriptionHeaders): Promise<void> {
     const res = await fetch(`${API_BASE}/api/v1/subscription/headers`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(headers),
     });
     if (!res.ok) throw new Error(`Save headers failed: ${res.statusText}`);
   },
 
   async getSettings(): Promise<HostSettings> {
-    const res = await fetch(`${API_BASE}/api/v1/settings`);
+    const res = await fetch(`${API_BASE}/api/v1/settings`, {
+      headers: getHeaders(),
+    });
     if (!res.ok) throw new Error(`Settings fetch failed: ${res.statusText}`);
     return res.json();
   },
@@ -86,7 +153,7 @@ export const api = {
   async saveSettings(settings: HostSettings): Promise<void> {
     const res = await fetch(`${API_BASE}/api/v1/settings`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(settings),
     });
     if (!res.ok) throw new Error(`Save settings failed: ${res.statusText}`);
@@ -95,6 +162,7 @@ export const api = {
   async renewAcme(): Promise<string> {
     const res = await fetch(`${API_BASE}/api/v1/settings/acme/renew`, {
       method: 'POST',
+      headers: getHeaders(),
     });
     if (!res.ok) {
       const err = await res.text();
@@ -106,6 +174,7 @@ export const api = {
   async restartCores(): Promise<void> {
     const res = await fetch(`${API_BASE}/api/v1/core/restart`, {
       method: 'POST',
+      headers: getHeaders(),
     });
     if (!res.ok) throw new Error(`Restart cores failed: ${res.statusText}`);
   },

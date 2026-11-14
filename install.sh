@@ -79,8 +79,14 @@ ADMIN_ID="${ADMIN_ID:-0}"
 read -rp "🌐 Ваш домен/поддомен (A-запись в Cloudflare, или Enter для IP): " DOMAIN
 DOMAIN="${DOMAIN:-}"
 
-read -rp "🔌 Порт для веб-панели [по умолчанию 8080]: " PANEL_PORT
-PANEL_PORT="${PANEL_PORT:-8080}"
+if [[ -n "$DOMAIN" ]]; then
+    PANEL_PORT_DEF="80"
+else
+    PANEL_PORT_DEF="8080"
+fi
+
+read -rp "🔌 Порт для веб-панели [по умолчанию ${PANEL_PORT_DEF}]: " PANEL_PORT
+PANEL_PORT="${PANEL_PORT:-$PANEL_PORT_DEF}"
 
 # 1. Установка системных зависимостей
 info "Обновление пакетов и установка зависимостей (включая компилятор и линковщик)..."
