@@ -31,8 +31,23 @@ import { JELLY_SNAP, JELLY_TAB_VARIANTS } from './utils/motion';
 // ============================================================================
 
 export function App() {
-  const [authorized] = useState<boolean>(() => isTelegramOrAuthorized());
+  const [authorized, setAuthorized] = useState<boolean>(() => isTelegramOrAuthorized());
   const [activeTab, setActiveTab] = useState<TabId>('overview');
+
+  useEffect(() => {
+    if (!authorized) {
+      const interval = setInterval(() => {
+        if (isTelegramOrAuthorized()) {
+          setAuthorized(true);
+        }
+      }, 60);
+      const timer = setTimeout(() => clearInterval(interval), 1200);
+      return () => {
+        clearInterval(interval);
+        clearTimeout(timer);
+      };
+    }
+  }, [authorized]);
 
   // Состояние данных с синхронизацией через Rust REST API
   const [keys, setKeys] = useState<VpnKey[]>(INITIAL_KEYS);

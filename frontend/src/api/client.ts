@@ -49,12 +49,43 @@ export function getAuthToken(): string {
   return '';
 }
 
+export function getTelegramInitData(): string {
+  if (typeof window === 'undefined') return '';
+
+  const sdkData = (window as any).Telegram?.WebApp?.initData;
+  if (sdkData && typeof sdkData === 'string' && sdkData.trim().length > 0) {
+    return sdkData.trim();
+  }
+
+  // Parse from URL hash: #tgWebAppData=...
+  if (window.location.hash.includes('tgWebAppData=')) {
+    const rawHash = window.location.hash.replace(/^#/, '');
+    const searchParams = new URLSearchParams(rawHash);
+    const data = searchParams.get('tgWebAppData');
+    if (data) return data;
+  }
+
+  // Or from query params
+  const searchParams = new URLSearchParams(window.location.search);
+  const qData = searchParams.get('tgWebAppData');
+  if (qData) return qData;
+
+  return '';
+}
+
 export function isTelegramOrAuthorized(): boolean {
   if (typeof window === 'undefined') return false;
 
-  // In Telegram Mini App, initData is present
-  const tgInitData = (window as any).Telegram?.WebApp?.initData;
-  if (tgInitData && typeof tgInitData === 'string' && tgInitData.length > 5) {
+  // Telegram Mini App detection (Desktop / Mobile / Web)
+  if (getTelegramInitData().length > 0) return true;
+  if (
+    window.location.hash.includes('tgWebAppData') ||
+    window.location.hash.includes('tgWebAppVersion') ||
+    window.location.hash.includes('tgWebAppPlatform')
+  ) {
+    return true;
+  }
+  if ((window as any).TelegramWebviewProxy || (window as any).Telegram?.WebApp) {
     return true;
   }
 
@@ -66,8 +97,8 @@ function getHeaders(custom: Record<string, string> = {}): Record<string, string>
   const headers: Record<string, string> = { ...custom };
 
   if (typeof window !== 'undefined') {
-    const tgInitData = (window as any).Telegram?.WebApp?.initData;
-    if (tgInitData && typeof tgInitData === 'string' && tgInitData.length > 0) {
+    const tgInitData = getTelegramInitData();
+    if (tgInitData) {
       headers['X-Telegram-Init-Data'] = tgInitData;
     }
 
