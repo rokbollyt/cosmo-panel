@@ -139,8 +139,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let index_file = frontend_dir.join("index.html");
     let app = api_router
-        .nest_service(
-            "/",
+        .fallback_service(
             ServeDir::new(&frontend_dir).fallback(ServeFile::new(&index_file)),
         )
         .layer(cors);
