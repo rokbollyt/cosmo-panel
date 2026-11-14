@@ -87,6 +87,7 @@ pub struct VpnKey {
     pub name: String,
     pub protocol: ProtocolType,
     pub enabled: bool,
+    #[serde(default)]
     pub created_at: String,
     pub config: serde_json::Value,
 }

@@ -227,9 +227,13 @@ async fn handle_list_keys(State(ctx): State<Arc<AppContext>>) -> Json<Vec<VpnKey
 
 async fn handle_create_key(
     State(ctx): State<Arc<AppContext>>,
-    Json(new_key): Json<VpnKey>,
+    Json(mut new_key): Json<VpnKey>,
 ) -> (StatusCode, Json<VpnKey>) {
     info!("[API] Creating key: {} ({:?})", new_key.name, new_key.protocol);
+
+    if new_key.created_at.is_empty() {
+        new_key.created_at = chrono::Utc::now().to_rfc3339();
+    }
 
     {
         let mut guard = ctx.db.state.write().await;
