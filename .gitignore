@@ -1,0 +1,22 @@
+# Rust
+backend/target/
+**/target/
+**/*.rs.bk
+Cargo.lock
+
+# Node / Frontend
+frontend/node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data & temp
+data/
+*.tmp
+*.log
+release/
+
+# OS
+.DS_Store
+Thumbs.db
