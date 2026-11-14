@@ -12,6 +12,7 @@ interface OverviewTabProps {
   keys: VpnKey[];
   domain: string;
   stats?: SystemStats | null;
+  trafficSeries?: TrafficPoint[];
 }
 
 type PeriodKey = '24h' | '7d' | '30d';
@@ -48,10 +49,15 @@ function buildSmoothPath(points: { x: number; y: number }[]): string {
   return d;
 }
 
-export const OverviewTab: React.FC<OverviewTabProps> = ({ keys, domain, stats }) => {
-  // Живой тикающий аптайм
+export const OverviewTab: React.FC<OverviewTabProps> = ({
+  keys,
+  domain,
+  stats,
+  trafficSeries,
+}) => {
+  // Живой тикающий аптайм хоста
   const [uptimeSeconds, setUptimeSeconds] = useState(
-    stats?.uptimeSeconds ?? (14 * 86400 + 6 * 3600 + 42 * 60 + 18)
+    stats?.uptimeSeconds ?? 0
   );
   const [period, setPeriod] = useState<PeriodKey>('24h');
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -82,7 +88,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ keys, domain, stats })
     };
   }, [uptimeSeconds]);
 
-  const series: TrafficPoint[] = TRAFFIC_SERIES[period];
+  const series: TrafficPoint[] = useMemo(() => {
+    if (trafficSeries && trafficSeries.length > 0) {
+      return trafficSeries;
+    }
+    return TRAFFIC_SERIES[period];
+  }, [trafficSeries, period]);
+
   const activePoint =
     selectedIndex !== null && series[selectedIndex]
       ? series[selectedIndex]
@@ -166,9 +178,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ keys, domain, stats })
             </div>
 
             <div className="text-right">
-              <div className="text-[11px] text-white/45">Доступность</div>
-              <div className="font-mono-tech mt-0.5 text-[16px] font-semibold text-white">
-                99.98%
+              <div className="text-[11px] text-white/45">Статус узла</div>
+              <div className="font-mono-tech mt-0.5 text-[15px] font-semibold text-white">
+                {stats ? 'В сети' : 'Ожидание'}
               </div>
             </div>
           </div>
@@ -410,18 +422,24 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ keys, domain, stats })
               <HardDrive className="h-3.5 w-3.5 text-white/45" />
             </div>
             <div className="font-mono-tech mt-2.5 text-[22px] font-semibold tracking-tight text-white">
-              412.8 <span className="text-[12px] font-normal text-white/45">ГБ</span>
+              {Number(periodTotals.total || 0).toFixed(1)}{' '}
+              <span className="text-[12px] font-normal text-white/45">ГБ</span>
             </div>
             <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
               <motion.div
                 initial={{ width: 0 }}
-                animate={{ width: '41%' }}
+                animate={{
+                  width: `${Math.max(
+                    0,
+                    Math.min(100, (Number(periodTotals.total || 0) / 1000) * 100)
+                  )}%`,
+                }}
                 transition={{ delay: 0.2, type: 'spring', stiffness: 180, damping: 20 }}
                 className="h-full rounded-full bg-white shadow-[0_0_10px_rgba(255,255,255,0.55)]"
               />
             </div>
             <div className="mt-2 font-mono-tech text-[11px] text-white/40">
-              41% от 1 ТБ / мес
+              {((Number(periodTotals.total || 0) / 1000) * 100).toFixed(1)}% от 1 ТБ / мес
             </div>
           </LiquidGlassCard>
         </motion.div>
@@ -443,14 +461,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ keys, domain, stats })
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-white/50">CPU</span>
                   <span className="font-mono-tech text-white">
-                    {stats ? `${Math.round(stats.cpuUsagePercent)}%` : '14%'}
+                    {stats ? `${Math.round(stats.cpuUsagePercent)}%` : '0%'}
                   </span>
                 </div>
                 <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{
-                      width: stats ? `${Math.min(100, Math.max(5, Math.round(stats.cpuUsagePercent)))}%` : '14%',
+                      width: stats ? `${Math.min(100, Math.max(2, Math.round(stats.cpuUsagePercent)))}%` : '0%',
                     }}
                     transition={{ delay: 0.25, type: 'spring', stiffness: 180, damping: 20 }}
                     className="h-full rounded-full bg-white"
@@ -463,8 +481,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ keys, domain, stats })
                   <span className="text-white/50">RAM</span>
                   <span className="font-mono-tech text-white">
                     {stats && stats.memoryTotalMb > 0
-                      ? `${Math.round((stats.memoryUsedMb / stats.memoryTotalMb) * 100)}%`
-                      : '38%'}
+                      ? `${Math.round((stats.memoryUsedMb / stats.memoryTotalMb) * 100)}% (${stats.memoryUsedMb} МБ)`
+                      : '0%'}
                   </span>
                 </div>
                 <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
@@ -476,11 +494,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({ keys, domain, stats })
                           ? `${Math.min(
                               100,
                               Math.max(
-                                5,
+                                2,
                                 Math.round((stats.memoryUsedMb / stats.memoryTotalMb) * 100)
                               )
                             )}%`
-                          : '38%',
+                          : '0%',
                     }}
                     transition={{ delay: 0.3, type: 'spring', stiffness: 180, damping: 20 }}
                     className="h-full rounded-full bg-white/80"

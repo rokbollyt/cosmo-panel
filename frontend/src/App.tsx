@@ -58,6 +58,7 @@ export function App() {
     INITIAL_HOST_SETTINGS
   );
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
+  const [trafficSeries, setTrafficSeries] = useState<TrafficPoint[]>([]);
 
   // Модальные окна
   const [createOpen, setCreateOpen] = useState(false);
@@ -93,7 +94,12 @@ export function App() {
         if (fetchedKeys.status === 'fulfilled') setKeys(fetchedKeys.value);
         if (fetchedHeaders.status === 'fulfilled') setSubHeaders(fetchedHeaders.value);
         if (fetchedSettings.status === 'fulfilled') setHostSettings(fetchedSettings.value);
-        if (overview.status === 'fulfilled') setSystemStats(overview.value.stats);
+        if (overview.status === 'fulfilled') {
+          setSystemStats(overview.value.stats);
+          if (overview.value.trafficSeries) {
+            setTrafficSeries(overview.value.trafficSeries);
+          }
+        }
       } catch (e) {
         console.warn('Backend unavailable, running in local fallback mode', e);
       }
@@ -106,6 +112,9 @@ export function App() {
       try {
         const ov = await api.getOverview();
         setSystemStats(ov.stats);
+        if (ov.trafficSeries) {
+          setTrafficSeries(ov.trafficSeries);
+        }
       } catch {
         // ignore offline error
       }
@@ -306,6 +315,7 @@ export function App() {
                   keys={keys}
                   domain={hostSettings.domain}
                   stats={systemStats}
+                  trafficSeries={trafficSeries}
                 />
               </motion.div>
             )}

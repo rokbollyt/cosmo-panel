@@ -76,10 +76,26 @@ impl TelegramBot {
         }
     }
 
+    async fn get_authed_panel_url(&self) -> String {
+        let secret_token = {
+            let guard = self.db.state.read().await;
+            guard.admin_secret_token.clone()
+        };
+        if secret_token.is_empty() {
+            self.panel_url.clone()
+        } else if self.panel_url.contains('?') {
+            format!("{}&auth={}", self.panel_url, secret_token)
+        } else {
+            format!("{}?auth={}", self.panel_url, secret_token)
+        }
+    }
+
     async fn setup_menu_button(&self) {
         if self.panel_url.trim().is_empty() {
             return;
         }
+
+        let app_url = self.get_authed_panel_url().await;
 
         let url = format!(
             "https://api.telegram.org/bot{}/setChatMenuButton",
@@ -90,7 +106,7 @@ impl TelegramBot {
                 "type": "web_app",
                 "text": "Cosmo Panel",
                 "web_app": {
-                    "url": self.panel_url
+                    "url": app_url
                 }
             }
         });
@@ -127,10 +143,11 @@ impl TelegramBot {
         } else if text.starts_with("/keys") {
             self.handle_keys(chat_id).await;
         } else {
+            let app_url = self.get_authed_panel_url().await;
             self.send_message(
                 chat_id,
                 "🌌 *Cosmo VPN Panel*\n\nПанель защищена от посторонних. Управление доступно только в Telegram Mini App или по секретной ссылке.",
-                Some(self.build_main_keyboard()),
+                Some(self.build_main_keyboard(&app_url)),
             )
             .await;
         }
@@ -164,7 +181,7 @@ impl TelegramBot {
     }
 
     async fn handle_start(&self, chat_id: i64, user_id: i64) {
-        let (domain, active_count, secret_token) = {
+        let (domain, active_count, _) = {
             let guard = self.db.state.read().await;
             let dom = if guard.host_settings.domain.is_empty() {
                 "IP / локальный адрес"
@@ -178,11 +195,9 @@ impl TelegramBot {
             )
         };
 
-        let secret_url = if self.panel_url.contains('?') {
-            format!("{}&auth={}", self.panel_url, secret_token)
-        } else {
-            format!("{}?auth={}", self.panel_url, secret_token)
-        };
+        let app_url = self.get_authed_panel_url().await;
+        // Refresh menu button
+        self.setup_menu_button().await;
 
         let text = format!(
             "🌌 *Cosmo VPN Panel*\n\n\
@@ -194,10 +209,23 @@ impl TelegramBot {
             💻 Либо используйте секретную ссылку администратора:\n[🔗 Войти в панель]({})\n\n\
             `/sub` — получить ссылку на подписку для клиента\n\
             `/status` — статистика хоста и нагрузка",
-            user_id, domain, active_count, secret_url
+            user_id, domain, active_count, app_url
         );
 
-        self.send_message(chat_id, &text, Some(self.build_main_keyboard()))
+        let inline_markup = json!({
+            "inline_keyboard": [
+                [
+                    {
+                        "text": "🌌 Запустить Cosmo Panel",
+                        "web_app": { "url": app_url }
+                    }
+                ]
+            ]
+        });
+
+        self.send_message(chat_id, &text, Some(self.build_main_keyboard(&app_url)))
+            .await;
+        self.send_message(chat_id, "👇 Нажмите для входа:", Some(inline_markup))
             .await;
     }
 
@@ -223,7 +251,8 @@ impl TelegramBot {
             sub_url
         );
 
-        self.send_message(chat_id, &text, Some(self.build_main_keyboard()))
+        let app_url = self.get_authed_panel_url().await;
+        self.send_message(chat_id, &text, Some(self.build_main_keyboard(&app_url)))
             .await;
 
         if !raw_body.is_empty() {
@@ -249,7 +278,8 @@ impl TelegramBot {
             domain, cert_status, total, enabled
         );
 
-        self.send_message(chat_id, &text, Some(self.build_main_keyboard()))
+        let app_url = self.get_authed_panel_url().await;
+        self.send_message(chat_id, &text, Some(self.build_main_keyboard(&app_url)))
             .await;
     }
 
@@ -273,16 +303,17 @@ impl TelegramBot {
             lines.push(format!("{}. *{}* ({}) — {}", i + 1, k.name, proto, status));
         }
 
-        self.send_message(chat_id, &lines.join("\n"), Some(self.build_main_keyboard())).await;
+        let app_url = self.get_authed_panel_url().await;
+        self.send_message(chat_id, &lines.join("\n"), Some(self.build_main_keyboard(&app_url))).await;
     }
 
-    fn build_main_keyboard(&self) -> serde_json::Value {
+    fn build_main_keyboard(&self, app_url: &str) -> serde_json::Value {
         let mut keyboard = Vec::new();
 
-        if !self.panel_url.is_empty() {
+        if !app_url.is_empty() {
             keyboard.push(vec![json!({
                 "text": "🌌 Открыть Cosmo Panel",
-                "web_app": { "url": self.panel_url }
+                "web_app": { "url": app_url }
             })]);
         }
 
