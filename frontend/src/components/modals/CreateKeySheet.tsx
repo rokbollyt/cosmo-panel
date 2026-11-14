@@ -60,8 +60,8 @@ function makeInitialVless(domain: string): VlessConfig {
 
 function makeInitialHysteria(domain: string): Hysteria2Config {
   return {
-    port: 8443,
-    portHopping: '20000-50000',
+    port: 443,
+    portHopping: '',
     password: generatePassword(18),
     obfs: 'none',
     obfsPassword: '',
