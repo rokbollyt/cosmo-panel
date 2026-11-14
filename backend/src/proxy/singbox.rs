@@ -110,8 +110,17 @@ pub fn generate_singbox_config(
                         });
                     }
 
-                    if !c.masquerade_url.is_empty() {
-                        inbound["masquerade"] = json!(c.masquerade_url);
+                    let clean_masq = c.masquerade_url.trim();
+                    if !clean_masq.is_empty() {
+                        let formatted_masq = if clean_masq.starts_with("http://")
+                            || clean_masq.starts_with("https://")
+                            || clean_masq.starts_with("file://")
+                        {
+                            clean_masq.to_string()
+                        } else {
+                            format!("https://{}", clean_masq)
+                        };
+                        inbound["masquerade"] = json!(formatted_masq);
                     }
 
                     if c.up_mbps > 0 {
