@@ -83,18 +83,18 @@ read -rp "🔌 Порт для веб-панели [по умолчанию 8080
 PANEL_PORT="${PANEL_PORT:-8080}"
 
 # 1. Установка системных зависимостей
-info "Обновление пакетов и установка зависимостей..."
+info "Обновление пакетов и установка зависимостей (включая компилятор и линковщик)..."
 if command -v apt-get &>/dev/null; then
     apt-get update -qq
-    apt-get install -y -qq curl wget jq tar openssl certbot iptables ca-certificates git
+    apt-get install -y -qq curl wget jq tar openssl certbot iptables ca-certificates git build-essential gcc make pkg-config
 elif command -v dnf &>/dev/null; then
-    dnf install -y -q curl wget jq tar openssl certbot iptables ca-certificates git
+    dnf install -y -q curl wget jq tar openssl certbot iptables ca-certificates git gcc gcc-c++ make pkgconf-pkg-config
 elif command -v yum &>/dev/null; then
-    yum install -y -q curl wget jq tar openssl certbot iptables ca-certificates git
+    yum install -y -q curl wget jq tar openssl certbot iptables ca-certificates git gcc gcc-c++ make pkgconfig
 elif command -v apk &>/dev/null; then
-    apk add --no-cache curl wget jq tar openssl certbot iptables ca-certificates git
+    apk add --no-cache curl wget jq tar openssl certbot iptables ca-certificates git build-base gcc make musl-dev
 fi
-success "Системные утилиты установлены"
+success "Системные утилиты и компилятор установлены"
 
 # 2. Включение BBR для максимальной скорости VPN
 info "Активация Linux TCP BBR congestion control..."
@@ -158,9 +158,14 @@ else
     info "Подготовка Rust окружения и компиляция ядра..."
     if ! command -v cargo &>/dev/null; then
         info "Установка Rust toolchain..."
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+    fi
+    export PATH="$HOME/.cargo/bin:/root/.cargo/bin:$PATH"
+    if [[ -f "$HOME/.cargo/env" ]]; then
+        # shellcheck disable=SC1091
         source "$HOME/.cargo/env"
     fi
+    info "Запуск сборки Cosmo Panel (cargo build --release)..."
     (cd "${SCRIPT_DIR}/backend" && cargo build --release)
     install -m 755 "${SCRIPT_DIR}/backend/target/release/cosmo-panel" /usr/local/bin/cosmo-panel
 fi
