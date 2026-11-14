@@ -102,15 +102,19 @@ elif command -v apk &>/dev/null; then
 fi
 success "Системные утилиты и компилятор установлены"
 
-# 2. Включение BBR для максимальной скорости VPN
-info "Активация Linux TCP BBR congestion control..."
+# 2. Включение BBR и IP forwarding для максимальной скорости VPN
+info "Активация Linux TCP BBR и IP forwarding..."
 modprobe tcp_bbr 2>/dev/null || true
 if ! grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf 2>/dev/null; then
     echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
     echo "net.ipv4.tcp_congestion_control=bbr" >> /etc/sysctl.conf
 fi
+if ! grep -q "net.ipv4.ip_forward=1" /etc/sysctl.conf 2>/dev/null; then
+    echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+    echo "net.ipv6.conf.all.forwarding=1" >> /etc/sysctl.conf
+fi
 sysctl -p /etc/sysctl.conf >/dev/null 2>&1 || true
-success "TCP BBR активирован"
+success "TCP BBR и IP forwarding активированы"
 
 # 3. Установка Sing-box (легковесное ядро для VLESS Reality, Hysteria 2, SOCKS5)
 info "Установка Sing-box core..."

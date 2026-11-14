@@ -4,7 +4,6 @@ use std::fmt::Write;
 pub struct MtgCmd {
     pub port: u16,
     pub secret: String,
-    pub ad_tag: Option<String>,
 }
 
 pub fn extract_mtproxy_config(keys: &[VpnKey]) -> Option<MtgCmd> {
@@ -26,16 +25,9 @@ pub fn extract_mtproxy_config(keys: &[VpnKey]) -> Option<MtgCmd> {
                 full_secret = format!("dd{}", c.secret);
             }
 
-            let ad = if c.ad_tag.trim().is_empty() {
-                None
-            } else {
-                Some(c.ad_tag.trim().to_string())
-            };
-
             return Some(MtgCmd {
                 port: c.port,
                 secret: full_secret,
-                ad_tag: ad,
             });
         }
     }

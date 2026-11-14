@@ -122,6 +122,12 @@ export function isTelegramOrAuthorized(): boolean {
   const tgData = getTelegramInitData();
   if (tgData.length > 0) return true;
 
+  // 3. Telegram WebApp client environment (tdesktop, android, ios, macos, etc.)
+  const tgPlatform = (window as any).Telegram?.WebApp?.platform;
+  if (tgPlatform && typeof tgPlatform === 'string' && tgPlatform !== 'unknown') {
+    return true;
+  }
+
   // In all other cases (e.g. regular browser without auth token): NOT AUTHORIZED
   return false;
 }

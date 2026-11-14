@@ -1,6 +1,8 @@
 pub mod mtproxy;
 pub mod singbox;
 
+#[cfg(not(target_os = "windows"))]
+use crate::models::{Hysteria2Config, ProtocolType};
 use crate::models::VpnKey;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -48,6 +50,33 @@ impl ProxyManager {
         // Restart mtg daemon
         let mtg_conf = mtproxy::extract_mtproxy_config(keys);
         self.restart_mtg(mtg_conf);
+
+        // Manage port hopping for Hysteria 2 keys
+        self.apply_port_hopping_rules(keys);
+    }
+
+    #[allow(unused_variables)]
+    fn apply_port_hopping_rules(&self, keys: &[VpnKey]) {
+        #[cfg(not(target_os = "windows"))]
+        {
+            for key in keys.iter().filter(|k| k.enabled && k.protocol == ProtocolType::Hysteria2) {
+                if let Ok(c) = serde_json::from_value::<Hysteria2Config>(key.config.clone()) {
+                    let hopping = c.port_hopping.trim().replace('-', ":");
+                    if !hopping.is_empty() && hopping.contains(':') {
+                        info!("[ProxyManager] Configuring iptables port hopping: {} -> {}", hopping, c.port);
+                        let port_str = c.port.to_string();
+                        let check = Command::new("iptables")
+                            .args(["-t", "nat", "-C", "PREROUTING", "-p", "udp", "--dport", &hopping, "-j", "REDIRECT", "--to-ports", &port_str])
+                            .output();
+                        if check.as_ref().map(|o| !o.status.success()).unwrap_or(true) {
+                            let _ = Command::new("iptables")
+                                .args(["-t", "nat", "-A", "PREROUTING", "-p", "udp", "--dport", &hopping, "-j", "REDIRECT", "--to-ports", &port_str])
+                                .output();
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fn restart_singbox(&self, config_file: &Path) {
@@ -106,12 +135,7 @@ impl ProxyManager {
         let bin_path = bin.unwrap();
         let bind_arg = format!("0.0.0.0:{}", conf.port);
         let mut cmd = Command::new(&bin_path);
-        cmd.args(["simple-run", "-b", &bind_arg]);
-
-        if let Some(ad) = conf.ad_tag {
-            cmd.args(["-t", &ad]);
-        }
-        cmd.arg(&conf.secret);
+        cmd.args(["simple-run", &bind_arg, &conf.secret]);
 
         match cmd.spawn() {
             Ok(child) => {
