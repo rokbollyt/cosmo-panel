@@ -461,14 +461,20 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                 <div className="flex items-center justify-between text-[11px]">
                   <span className="text-white/50">CPU</span>
                   <span className="font-mono-tech text-white">
-                    {stats ? `${Math.round(stats.cpuUsagePercent)}%` : '0%'}
+                    {stats
+                      ? stats.cpuUsagePercent < 1.0
+                        ? `${stats.cpuUsagePercent.toFixed(1)}%`
+                        : `${Math.round(stats.cpuUsagePercent)}%`
+                      : '—'}
                   </span>
                 </div>
                 <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{
-                      width: stats ? `${Math.min(100, Math.max(2, Math.round(stats.cpuUsagePercent)))}%` : '0%',
+                      width: stats
+                        ? `${Math.min(100, Math.max(3, Math.round(stats.cpuUsagePercent)))}%`
+                        : '0%',
                     }}
                     transition={{ delay: 0.25, type: 'spring', stiffness: 180, damping: 20 }}
                     className="h-full rounded-full bg-white"
@@ -481,8 +487,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   <span className="text-white/50">RAM</span>
                   <span className="font-mono-tech text-white">
                     {stats && stats.memoryTotalMb > 0
-                      ? `${Math.round((stats.memoryUsedMb / stats.memoryTotalMb) * 100)}% (${stats.memoryUsedMb} МБ)`
-                      : '0%'}
+                      ? `${Math.round((stats.memoryUsedMb / stats.memoryTotalMb) * 100)}% (${stats.memoryUsedMb} МБ / ${stats.memoryTotalMb} МБ)`
+                      : '—'}
                   </span>
                 </div>
                 <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
@@ -494,7 +500,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                           ? `${Math.min(
                               100,
                               Math.max(
-                                2,
+                                3,
                                 Math.round((stats.memoryUsedMb / stats.memoryTotalMb) * 100)
                               )
                             )}%`

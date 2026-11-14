@@ -72,10 +72,11 @@ impl AcmeManager {
             }
         }
 
+        // Try certbot with --nginx plugin first (since Nginx is running reverse proxy)
         let mut cmd = Command::new("certbot");
         cmd.args([
             "certonly",
-            "--standalone",
+            "--nginx",
             "-d",
             domain,
             "--agree-tos",
@@ -88,11 +89,36 @@ impl AcmeManager {
             cmd.args(["-m", email.trim()]);
         }
 
-        let certbot_cmd = cmd.output();
+        let mut certbot_cmd = cmd.output();
+
+        // If --nginx failed, try --standalone with temporary nginx stop/start
+        if certbot_cmd.as_ref().map(|o| !o.status.success()).unwrap_or(true) {
+            info!("[ACME] --nginx certbot attempt failed or unavailable, trying standalone mode...");
+            let _ = Command::new("systemctl").args(["stop", "nginx"]).output();
+
+            let mut standalone_cmd = Command::new("certbot");
+            standalone_cmd.args([
+                "certonly",
+                "--standalone",
+                "-d",
+                domain,
+                "--agree-tos",
+                "--non-interactive",
+            ]);
+            if email.trim().is_empty() {
+                standalone_cmd.arg("--register-unsafely-without-email");
+            } else {
+                standalone_cmd.args(["-m", email.trim()]);
+            }
+
+            certbot_cmd = standalone_cmd.output();
+            let _ = Command::new("systemctl").args(["start", "nginx"]).output();
+        }
 
         match certbot_cmd {
             Ok(output) if output.status.success() => {
                 info!("[ACME] Certbot successfully obtained certificate for {}", domain);
+                let _ = Command::new("systemctl").args(["reload", "nginx"]).output();
                 let expires = chrono::Utc::now() + chrono::Duration::days(90);
                 let expires_str = expires.format("%d %b %Y").to_string();
                 Ok(("active".to_string(), expires_str))

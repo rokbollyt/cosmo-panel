@@ -21,7 +21,7 @@ import type {
   TabId,
   VpnKey,
 } from './types/vpn';
-import { api, isTelegramOrAuthorized, type SystemStats } from './api/client';
+import { api, isTelegramOrAuthorized, setAuthToken, type SystemStats } from './api/client';
 import { initTelegramMiniApp } from './utils/haptics';
 import { JELLY_SNAP, JELLY_TAB_VARIANTS } from './utils/motion';
 
@@ -202,6 +202,8 @@ export function App() {
     [showToast]
   );
 
+  const [tokenInput, setTokenInput] = useState('');
+
   if (!authorized) {
     return (
       <div className="relative flex min-h-[100dvh] w-full flex-col items-center justify-center bg-black px-6 text-center text-white">
@@ -215,8 +217,33 @@ export function App() {
             403 · Доступ ограничен
           </h1>
           <p className="mt-2 text-[12.5px] leading-relaxed text-white/45">
-            Узел защищен. Панель управления доступна только через авторизованный Telegram-бот в режиме Mini App.
+            Узел защищен. Панель управления доступна только через авторизованный Telegram-бот в режиме Mini App или по токену администратора.
           </p>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (tokenInput.trim()) {
+                setAuthToken(tokenInput.trim());
+                setAuthorized(true);
+              }
+            }}
+            className="mt-6 flex flex-col gap-2.5"
+          >
+            <input
+              type="password"
+              placeholder="Секретный токен админа"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              className="liquid-glass rounded-xl px-3.5 py-2.5 text-center font-mono text-[12px] text-white placeholder-white/25 focus:outline-none focus:ring-1 focus:ring-white/40"
+            />
+            <button
+              type="submit"
+              className="rounded-xl bg-white/10 hover:bg-white/20 active:scale-95 px-4 py-2 text-[12.5px] font-medium text-white transition-all"
+            >
+              Войти в панель
+            </button>
+          </form>
         </div>
       </div>
     );

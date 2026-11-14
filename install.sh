@@ -92,7 +92,7 @@ PANEL_PORT="${PANEL_PORT:-$PANEL_PORT_DEF}"
 info "Обновление пакетов и установка зависимостей (включая компилятор и линковщик)..."
 if command -v apt-get &>/dev/null; then
     apt-get update -qq
-    apt-get install -y -qq curl wget jq tar openssl certbot iptables ca-certificates git build-essential gcc make pkg-config
+    apt-get install -y -qq curl wget jq tar openssl certbot python3-certbot-nginx iptables ca-certificates git build-essential gcc make pkg-config
 elif command -v dnf &>/dev/null; then
     dnf install -y -q curl wget jq tar openssl certbot iptables ca-certificates git gcc gcc-c++ make pkgconf-pkg-config
 elif command -v yum &>/dev/null; then

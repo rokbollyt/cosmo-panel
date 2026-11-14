@@ -23,25 +23,64 @@ export interface OverviewResponse {
 
 const API_BASE = ''; // relative to host
 
+export function setAuthToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  const clean = token.trim();
+  if (!clean) return;
+  try {
+    localStorage.setItem('cosmo_auth', clean);
+    sessionStorage.setItem('cosmo_auth', clean);
+    document.cookie = `cosmo_auth=${encodeURIComponent(clean)}; path=/; max-age=31536000; SameSite=Lax`;
+  } catch {
+    // ignore
+  }
+}
+
 export function getAuthToken(): string {
   if (typeof window === 'undefined') return '';
 
-  // Check URL query param ?auth=...
+  // 1. Check URL query param ?auth=...
   const urlParams = new URLSearchParams(window.location.search);
   const qToken = urlParams.get('auth');
-  if (qToken) {
-    try {
-      localStorage.setItem('cosmo_auth', qToken);
-    } catch {
-      // ignore
-    }
-    return qToken;
+  if (qToken && qToken.trim().length > 0) {
+    setAuthToken(qToken.trim());
+    return qToken.trim();
   }
 
-  // Check localStorage
+  // 2. Check URL hash #auth=... or #token=...
+  if (window.location.hash.includes('auth=') || window.location.hash.includes('token=')) {
+    const rawHash = window.location.hash.replace(/^#/, '');
+    const hashParams = new URLSearchParams(rawHash);
+    const hToken = hashParams.get('auth') || hashParams.get('token');
+    if (hToken && hToken.trim().length > 0) {
+      setAuthToken(hToken.trim());
+      return hToken.trim();
+    }
+  }
+
+  // 3. Check localStorage
   try {
     const saved = localStorage.getItem('cosmo_auth');
-    if (saved) return saved;
+    if (saved && saved.trim().length > 0) return saved.trim();
+  } catch {
+    // ignore
+  }
+
+  // 4. Check sessionStorage
+  try {
+    const sessionSaved = sessionStorage.getItem('cosmo_auth');
+    if (sessionSaved && sessionSaved.trim().length > 0) return sessionSaved.trim();
+  } catch {
+    // ignore
+  }
+
+  // 5. Check cookies
+  try {
+    const match = document.cookie.match(/(?:^|;\s*)cosmo_auth=([^;]+)/);
+    if (match && match[1]) {
+      const decoded = decodeURIComponent(match[1]);
+      if (decoded.trim().length > 0) return decoded.trim();
+    }
   } catch {
     // ignore
   }
@@ -62,13 +101,13 @@ export function getTelegramInitData(): string {
     const rawHash = window.location.hash.replace(/^#/, '');
     const searchParams = new URLSearchParams(rawHash);
     const data = searchParams.get('tgWebAppData');
-    if (data) return data;
+    if (data && data.trim().length > 0) return data.trim();
   }
 
   // Or from query params
   const searchParams = new URLSearchParams(window.location.search);
   const qData = searchParams.get('tgWebAppData');
-  if (qData) return qData;
+  if (qData && qData.trim().length > 0) return qData.trim();
 
   return '';
 }
@@ -76,21 +115,15 @@ export function getTelegramInitData(): string {
 export function isTelegramOrAuthorized(): boolean {
   if (typeof window === 'undefined') return false;
 
-  // Telegram Mini App detection (Desktop / Mobile / Web)
-  if (getTelegramInitData().length > 0) return true;
-  if (
-    window.location.hash.includes('tgWebAppData') ||
-    window.location.hash.includes('tgWebAppVersion') ||
-    window.location.hash.includes('tgWebAppPlatform')
-  ) {
-    return true;
-  }
-  if ((window as any).TelegramWebviewProxy || (window as any).Telegram?.WebApp) {
-    return true;
-  }
+  // 1. Direct admin auth token
+  if (getAuthToken().length > 0) return true;
 
-  // Or secret auth token exists
-  return !!getAuthToken();
+  // 2. Valid Telegram Mini App session data
+  const tgData = getTelegramInitData();
+  if (tgData.length > 0) return true;
+
+  // In all other cases (e.g. regular browser without auth token): NOT AUTHORIZED
+  return false;
 }
 
 function getHeaders(custom: Record<string, string> = {}): Record<string, string> {
